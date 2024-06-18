@@ -87,7 +87,7 @@ for filename in imageFiles:
     # Apply Kirsch thresholding experiment
     thresholds = [50, 100, 150, 200, 250, 300]
     plt.figure(figsize=(18, 12))
-    plt.subplot(3, 3, 1), plt.imshow(kirschEdges, cmap='gray'), plt.title('Kirsch Original')
+    plt.subplot(3, 3, 1), plt.imshow(image, cmap='gray'), plt.title('Kirsch Original')
     for i, t in enumerate(thresholds):
         _, kirschBinary = cv2.threshold(kirschEdges.astype(np.uint8), t, 255, cv2.THRESH_BINARY)
         plt.subplot(3, 3, i + 2), plt.imshow(kirschBinary, cmap='gray'), plt.title(f'Threshold {t}')

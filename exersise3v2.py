@@ -2,9 +2,9 @@ import numpy as np
 from scipy.fftpack import dct, idct
 from PIL import Image
 import matplotlib.pyplot as plt
-from collections import Counter, defaultdict
-import heapq
+import huffman  # Importing the huffman library
 import os
+from collections import Counter  # Import Counter
 
 # Ορισμός των πινάκων κβάντισης
 Q10 = np.array([
@@ -98,54 +98,6 @@ def inverse_zigzag_order(arr, block_size=8):
                     index += 1
     return block
 
-class Node:
-    def __init__(self, symbol, freq):
-        self.symbol = symbol
-        self.freq = freq
-        self.left = None
-        self.right = None
-
-    def __lt__(self, other):
-        return self.freq < other.freq
-
-def build_tree(freqs):
-    heap = [Node(sym, freq) for sym, freq in freqs.items()]
-    heapq.heapify(heap)
-    while len(heap) > 1:
-        node1 = heapq.heappop(heap)
-        node2 = heapq.heappop(heap)
-        merged = Node(None, node1.freq + node2.freq)
-        merged.left = node1
-        merged.right = node2
-        heapq.heappush(heap, merged)
-    return heap[0]
-
-def generate_codes(node, prefix="", codebook={}):
-    if node is not None:
-        if node.symbol is not None:
-            codebook[node.symbol] = prefix
-        generate_codes(node.left, prefix + "0", codebook)
-        generate_codes(node.right, prefix + "1", codebook)
-    return codebook
-
-def huffman_encoding(arr):
-    freqs = Counter(arr)
-    root = build_tree(freqs)
-    codebook = generate_codes(root)
-    encoded = ''.join([codebook[sym] for sym in arr])
-    return encoded, codebook
-
-def huffman_decoding(encoded, codebook):
-    reverse_codebook = {v: k for k, v in codebook.items()}
-    decoded = []
-    current_code = ""
-    for bit in encoded:
-        current_code += bit
-        if current_code in reverse_codebook:
-            decoded.append(reverse_codebook[current_code])
-            current_code = ""
-    return np.array(decoded)
-
 def psnr(original, reconstructed):
     mse = np.mean((original - reconstructed) ** 2)
     if mse == 0:
@@ -160,17 +112,30 @@ def jpeg_compress(image_path, q_table):
     quantized_blocks = [quantize(block, q_table) for block in dct_blocks]
     zigzag_blocks = [zigzag_order(block) for block in quantized_blocks]
     all_coefficients = np.concatenate(zigzag_blocks)
-    encoded, codebook = huffman_encoding(all_coefficients)
-    return encoded, codebook, image.shape, len(encoded) / len(all_coefficients), len(image.flatten()) * 8 / len(encoded)
 
-def jpeg_decompress(encoded, codebook, image_shape, q_table):
-    decoded = huffman_decoding(encoded, codebook)
+    # Use the huffman library for encoding
+    huff = huffman.codebook(Counter(all_coefficients).items())
+    encoded = ''.join(huff[sym] for sym in all_coefficients)
+
+    return encoded, huff, image.shape, len(encoded) / len(all_coefficients), len(image.flatten()) * 8 / len(encoded)
+
+def jpeg_decompress(encoded, huff, image_shape, q_table):
+    # Decode using the huffman library
+    reverse_huff = {v: k for k, v in huff.items()}
+    decoded = []
+    current_code = ""
+    for bit in encoded:
+        current_code += bit
+        if current_code in reverse_huff:
+            decoded.append(reverse_huff[current_code])
+            current_code = ""
+    decoded = np.array(decoded)
+
     blocks = np.split(decoded, len(decoded) / 64)
     dequantized_blocks = [dequantize(inverse_zigzag_order(block), q_table) for block in blocks]
     idct_blocks = [idct_2d(block) for block in dequantized_blocks]
     reconstructed_image = recombine_blocks(idct_blocks, image_shape)
     return reconstructed_image
-
 def main():
     images = ["./images/bridge.bmp", "./images/girlface.bmp", "./images/lighthouse.bmp"]
     q_tables = [Q10, Q50]
@@ -181,9 +146,19 @@ def main():
     for img in images:
         results[img] = {}
         original_image = load_image(img)
-        for q_table, q_table_name in zip(q_tables, q_table_names):
-            encoded, codebook, image_shape, avg_codeword_length, compression_ratio = jpeg_compress(img, q_table)
-            reconstructed_image = jpeg_decompress(encoded, codebook, image_shape, q_table)
+
+        # Initialize a plot for each image
+        plt.figure(figsize=(18, 6))
+
+        # Plot the original image
+        plt.subplot(1, 3, 1)
+        plt.title(f"Original Image - {os.path.basename(img)}")
+        plt.imshow(original_image, cmap='gray')
+        plt.axis('off')
+
+        for i, (q_table, q_table_name) in enumerate(zip(q_tables, q_table_names), start=2):
+            encoded, huff, image_shape, avg_codeword_length, compression_ratio = jpeg_compress(img, q_table)
+            reconstructed_image = jpeg_decompress(encoded, huff, image_shape, q_table)
             psnr_value = psnr(original_image, reconstructed_image)
             results[img][q_table_name] = {
                 "avg_codeword_length": avg_codeword_length,
@@ -193,19 +168,13 @@ def main():
             output_image_path = f"reconstructed_{os.path.splitext(os.path.basename(img))[0]}_{q_table_name}.bmp"
             save_image(reconstructed_image, output_image_path)
 
-            # Plot original and decoded images
-            plt.figure(figsize=(12, 6))
-            plt.subplot(1, 2, 1)
-            plt.title(f"Original Image - {os.path.basename(img)}")
-            plt.imshow(original_image, cmap='gray')
-            plt.axis('off')
-
-            plt.subplot(1, 2, 2)
+            # Plot decoded image
+            plt.subplot(1, 3, i)
             plt.title(f"Decoded Image - {q_table_name}")
             plt.imshow(reconstructed_image, cmap='gray')
             plt.axis('off')
 
-            plt.show()
+        plt.show()
 
     for img, res in results.items():
         print(f"Results for {img}:")

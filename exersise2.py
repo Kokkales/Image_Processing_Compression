@@ -3,6 +3,31 @@ import numpy as np
 import heapq
 import pickle
 from collections import Counter
+import os
+import shutil
+
+# Define the path to the folder
+folder_path = './resultsTwo'
+
+# Check if the folder exists
+if os.path.exists(folder_path):
+    # Iterate over the contents of the folder
+    for filename in os.listdir(folder_path):
+        file_path = os.path.join(folder_path, filename)
+        try:
+            # Check if it is a file
+            if os.path.isfile(file_path) or os.path.islink(file_path):
+                os.unlink(file_path)  # Remove the file
+            elif os.path.isdir(file_path):
+                shutil.rmtree(file_path)  # Remove the directory and its contents
+        except Exception as e:
+            print(f'Failed to delete {file_path}. Reason: {e}')
+else:
+    print(f'The folder {folder_path} does not exist.')
+
+# Your code starts here
+print("Folder contents deleted. Starting the main code.")
+# Add your main code logic here
 
 class HuffmanNode:
     def __init__(self, symbol, frequency):
@@ -14,130 +39,140 @@ class HuffmanNode:
     def __lt__(self, other):
         return self.frequency < other.frequency
 
-def calculate_frequencies(img):
+def buildHuffmanTree(frequencies):
+    heap = [HuffmanNode(symbol, freq) for symbol, freq in enumerate(frequencies) if freq > 0] #arxikopoiise tous komvous
+    heapq.heapify(heap)
+
+    while len(heap) > 1: #while more than one nodes exist in the tree, till reach the root
+        left = heapq.heappop(heap)
+        right = heapq.heappop(heap)
+        merged = HuffmanNode(None, left.frequency + right.frequency) #new node -> αθροισμα αριστερού και δεξιού
+        merged.left = left
+        merged.right = right
+        heapq.heappush(heap, merged)
+
+    return heap[0] #root
+
+def calculateFrequencies(img):
     frequencies = np.zeros(256, dtype=int)
     for value in img.flatten():
         frequencies[value] += 1
     return frequencies
 
-def build_huffman_tree(frequencies):
-    heap = [HuffmanNode(symbol, freq) for symbol, freq in enumerate(frequencies) if freq > 0]
-    heapq.heapify(heap)
 
-    while len(heap) > 1:
-        left = heapq.heappop(heap)
-        right = heapq.heappop(heap)
-        merged = HuffmanNode(None, left.frequency + right.frequency)
-        merged.left = left
-        merged.right = right
-        heapq.heappush(heap, merged)
-
-    return heap[0]
-
-def create_huffman_codes(node, code='', codebook={}):
+# take the tree, χρησημοποίησα chat gpt εδώ για να το πετύχω
+def createHuffmanCodes(node, code='', codebook={}):
     if node is not None:
         if node.symbol is not None:
             codebook[node.symbol] = code
-        create_huffman_codes(node.left, code + '0', codebook)
-        create_huffman_codes(node.right, code + '1', codebook)
+        createHuffmanCodes(node.left, code + '0', codebook)
+        createHuffmanCodes(node.right, code + '1', codebook)
     return codebook
 
-def encode_image(img, codes):
-    encoded_img = ''
+def encodeImage(img, codes):
+    encodedImg = ''
     for value in img.flatten():
-        encoded_img += codes[value]
-    return encoded_img
+        encodedImg += codes[value]
+    return encodedImg
 
-def save_encoded_image(encoded_img, filename):
+def saveEncodedImage(encodedImg, filename):
     with open(filename, 'wb') as f:
-        pickle.dump(encoded_img, f)
+        pickle.dump(encodedImg, f)
 
-def save_huffman_codes(codes, filename):
+def savHuffmanCodes(codes, filename):
     with open(filename, 'wb') as f:
         pickle.dump(codes, f)
 
-def calculate_average_code_length(codes, frequencies):
-    total_symbols = sum(frequencies)
-    weighted_sum = sum(len(code) * frequencies[symbol] for symbol, code in codes.items())
-    return weighted_sum / total_symbols
+def calculateAverageCodeLength(codes, frequencies):
+    totalSymbols = sum(frequencies)
+    weightedSum = sum(len(code) * frequencies[symbol] for symbol, code in codes.items())
+    return weightedSum / totalSymbols
 
-def calculate_entropy(frequencies):
-    total_symbols = sum(frequencies)
-    entropy = -sum((freq / total_symbols) * np.log2(freq / total_symbols) for freq in frequencies if freq > 0)
+def calculateEntropy(frequencies):
+    totalSymbols = sum(frequencies)
+    entropy = -sum((freq / totalSymbols) * np.log2(freq / totalSymbols) for freq in frequencies if freq > 0)
     return entropy
 
-def calculate_compression_ratio(original_size, encoded_size):
-    return original_size / encoded_size
+def calculateCompressionRatio(originalSize, encodedSize):
+    return originalSize / encodedSize
 
-# Φόρτωση των εικόνων σε ασπρόμαυρο (grayscale)
-bridge_img = cv2.imread('./images/bridge.bmp', cv2.IMREAD_GRAYSCALE)
-girlface_img = cv2.imread('./images/girlface.bmp', cv2.IMREAD_GRAYSCALE)
-lighthouse_img = cv2.imread('./images/lighthouse.bmp', cv2.IMREAD_GRAYSCALE)
-
-# Υπολογισμός συχνοτήτων
-bridge_freq = calculate_frequencies(bridge_img)
-girlface_freq = calculate_frequencies(girlface_img)
-lighthouse_freq = calculate_frequencies(lighthouse_img)
-
-# Δημιουργία δέντρου Huffman
-bridge_tree = build_huffman_tree(bridge_freq)
-girlface_tree = build_huffman_tree(girlface_freq)
-lighthouse_tree = build_huffman_tree(lighthouse_freq)
-
-# Δημιουργία των κωδίκων Huffman
-bridge_codes = create_huffman_codes(bridge_tree)
-girlface_codes = create_huffman_codes(girlface_tree)
-lighthouse_codes = create_huffman_codes(lighthouse_tree)
-
-# Κωδικοποίηση των εικόνων
-bridge_encoded = encode_image(bridge_img, bridge_codes)
-girlface_encoded = encode_image(girlface_img, girlface_codes)
-lighthouse_encoded = encode_image(lighthouse_img, lighthouse_codes)
-
-# Αποθήκευση της κωδικοποιημένης εικόνας
-save_encoded_image(bridge_encoded, 'bridge_encoded.bin')
-save_encoded_image(girlface_encoded, 'girlface_encoded.bin')
-save_encoded_image(lighthouse_encoded, 'lighthouse_encoded.bin')
-
-# Αποθήκευση του πίνακα κωδίκων Huffman
-save_huffman_codes(bridge_codes, 'bridge_codes.pkl')
-save_huffman_codes(girlface_codes, 'girlface_codes.pkl')
-save_huffman_codes(lighthouse_codes, 'lighthouse_codes.pkl')
-
-# Υπολογισμός του μέσου μήκους κωδικής λέξης
-bridge_avg_length = calculate_average_code_length(bridge_codes, bridge_freq)
-girlface_avg_length = calculate_average_code_length(girlface_codes, girlface_freq)
-lighthouse_avg_length = calculate_average_code_length(lighthouse_codes, lighthouse_freq)
-
-# Υπολογισμός της εντροπίας
-bridge_entropy = calculate_entropy(bridge_freq)
-girlface_entropy = calculate_entropy(girlface_freq)
-lighthouse_entropy = calculate_entropy(lighthouse_freq)
-
-# Υπολογισμός του λόγου συμπίεσης
-bridge_original_size = bridge_img.size * 8  # σε bits
-girlface_original_size = girlface_img.size * 8
-lighthouse_original_size = lighthouse_img.size * 8
-
-bridge_encoded_size = len(bridge_encoded)  # σε bits
-girlface_encoded_size = len(girlface_encoded)
-lighthouse_encoded_size = len(lighthouse_encoded)
-
-bridge_compression_ratio = calculate_compression_ratio(bridge_original_size, bridge_encoded_size)
-girlface_compression_ratio = calculate_compression_ratio(girlface_original_size, girlface_encoded_size)
-lighthouse_compression_ratio = calculate_compression_ratio(lighthouse_original_size, lighthouse_encoded_size)
-
-# Εκτύπωση αποτελεσμάτων
-def print_results(name, codes, avg_length, entropy, compression_ratio):
-    print(f"Αποτελέσματα για την εικόνα {name}:")
-    print("1) Κωδικές λέξεις:")
+def printResults(name, codes, avgLength, entropy, compressionRatio):
+    name = name.replace('.bmp', '')
+    print(name)  # Output: bridge
     for symbol, code in codes.items():
-        print(f"  Φωτεινότητα {symbol}: {code}")
-    print(f"2) Μέσο μήκος κωδικής λέξης: {avg_length}")
-    print(f"3) Εντροπία: {entropy}")
-    print(f"4) Λόγος συμπίεσης: {compression_ratio}")
+        with open(f'./resultsTwo/{name}_brightness.txt', 'a', encoding='utf-8') as file:
+            # Write the formatted strings to the file
+            file.write(f"  Brightness {symbol}: {code}\n")
+        # print(f"  Brightness {symbol}: {code}")
+    with open(f'./resultsTwo/output.txt', 'a', encoding='utf-8') as file:
+        # Write the formatted strings to the file
+        file.write(f"{name}----------------------------\n")
+        file.write(f"1) Average encoded word length: {avgLength}\n")
+        file.write(f"2) Entropy: {entropy}\n")
+        file.write(f"3) Λόγος συμπίεσης: {compressionRatio}\n")
     print()
 
-print_results("bridge.bmp", bridge_codes, bridge_avg_length, bridge_entropy, bridge_compression_ratio)
-print_results("girlface.bmp", girlface_codes, girlface_avg_length, girlface_entropy, girlface_compression_ratio)
-print_results("lighthouse.bmp", lighthouse_codes, lighthouse_avg_length, lighthouse_entropy, lighthouse_compression_ratio)
+
+# images
+bridgeImg = cv2.imread('./images/bridge.bmp', cv2.IMREAD_GRAYSCALE)
+girlfaceImg = cv2.imread('./images/girlface.bmp', cv2.IMREAD_GRAYSCALE)
+lighthouseImg = cv2.imread('./images/lighthouse.bmp', cv2.IMREAD_GRAYSCALE)
+
+# frequencies for each φωτεινότητα
+bridgeFreq = calculateFrequencies(bridgeImg)
+girlfaceFreq = calculateFrequencies(girlfaceImg)
+lighthouseFreq = calculateFrequencies(lighthouseImg)
+
+# Huffman tree
+bridgeTree = buildHuffmanTree(bridgeFreq)
+girlfaceTree = buildHuffmanTree(girlfaceFreq)
+lighthouseTree = buildHuffmanTree(lighthouseFreq)
+
+# Hufffman codes
+bridgeCodes = createHuffmanCodes(bridgeTree)
+girlfaceCodes = createHuffmanCodes(girlfaceTree)
+lighthouseCodes = createHuffmanCodes(lighthouseTree)
+
+# Image Encoding
+bridgeEncoded = encodeImage(bridgeImg, bridgeCodes)
+girlfaceEncoded = encodeImage(girlfaceImg, girlfaceCodes)
+lighthouseEncoded = encodeImage(lighthouseImg, lighthouseCodes)
+
+# save encoded image
+path='./resultsTwo/'
+saveEncodedImage(bridgeEncoded, path+'bridgeEncoded.bin')
+saveEncodedImage(girlfaceEncoded, path+ 'girlfaceEncoded.bin')
+saveEncodedImage(lighthouseEncoded, path+ 'lighthouseEncoded.bin')
+
+# Αποθήκευση του πίνακα κωδίκων Huffman
+savHuffmanCodes(bridgeCodes, path+ 'bridgeCodes.pkl')
+savHuffmanCodes(girlfaceCodes, path+ 'girlfaceCodes.pkl')
+savHuffmanCodes(lighthouseCodes, path+ 'lighthouseCodes.pkl')
+
+# Υπολογισμός του μέσου μήκους κωδικής λέξης
+bridgeAvgLength = calculateAverageCodeLength(bridgeCodes, bridgeFreq)
+girlfaceAvgLength = calculateAverageCodeLength(girlfaceCodes, girlfaceFreq)
+lighthouseAvgLength = calculateAverageCodeLength(lighthouseCodes, lighthouseFreq)
+
+# Υπολογισμός της εντροπίας
+bridgeEntropy = calculateEntropy(bridgeFreq)
+girlfaceEntropy = calculateEntropy(girlfaceFreq)
+lighthouseEntropy = calculateEntropy(lighthouseFreq)
+
+# Υπολογισμός του λόγου συμπίεσης
+bridgeOriginalSize = bridgeImg.size * 8
+girlfaceOriginalSize = girlfaceImg.size * 8
+lighthouseOriginalSize = lighthouseImg.size * 8
+
+bridgeEncodedSize = len(bridgeEncoded)
+girlfaceEncodedSize = len(girlfaceEncoded)
+lighthouseEncodedSize = len(lighthouseEncoded)
+
+bridgeCompressionRatio = calculateCompressionRatio(bridgeOriginalSize, bridgeEncodedSize)
+girlfaceCompressionRatio = calculateCompressionRatio(girlfaceOriginalSize, girlfaceEncodedSize)
+lighthouseCompressionRatio = calculateCompressionRatio(lighthouseOriginalSize, lighthouseEncodedSize)
+
+
+printResults("bridge.bmp", bridgeCodes, bridgeAvgLength, bridgeEntropy, bridgeCompressionRatio)
+printResults("girlface.bmp", girlfaceCodes, girlfaceAvgLength, girlfaceEntropy, girlfaceCompressionRatio)
+printResults("lighthouse.bmp", lighthouseCodes, lighthouseAvgLength, lighthouseEntropy, lighthouseCompressionRatio)
