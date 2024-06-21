@@ -6,6 +6,7 @@ import huffman
 import os
 from collections import Counter
 
+# A.
 #  masks
 Q10 = np.array([
     [80, 60, 50, 80, 120, 200, 255, 255],
@@ -98,13 +99,7 @@ def inverseZigzagOrder(arr, blockSize=8):
                     index += 1
     return block
 
-def psnr(original, reconstructed):
-    mse = np.mean((original - reconstructed) ** 2)
-    if mse == 0:
-        return float('inf')
-    pixelMax = 255.0
-    return 20 * np.log10(pixelMax / np.sqrt(mse))
-
+# B.
 def jpegCompress(imagePath, qTable):
     image = loadImage(imagePath)
     blocks = blockSplitting(image)
@@ -136,51 +131,56 @@ def jpegDecompress(encoded, huff, imageShape, qTable):
     idctBlocks = [idct2d(block) for block in dequantizedBlocks]
     reconstructedImage = recombineBlocks(idctBlocks, imageShape)
     return reconstructedImage
-def main():
-    images = ["./images/bridge.bmp", "./images/girlface.bmp", "./images/lighthouse.bmp"]
-    qTables = [Q10, Q50]
-    qTableNames = ["Q10", "Q50"]
 
-    results = {}
+# Γ. PNSR
+def psnr(original, reconstructed):
+    mse = np.mean((original - reconstructed) ** 2)
+    if mse == 0:
+        return float('inf')
+    pixelMax = 255.0
+    return 20 * np.log10(pixelMax / np.sqrt(mse))
 
-    for img in images:
-        results[img] = {}
-        originalImage = loadImage(img)
+images = ["./images/bridge.bmp", "./images/girlface.bmp", "./images/lighthouse.bmp"]
+qTables = [Q10, Q50]
+qTableNames = ["Q10", "Q50"]
+
+results = {}
+
+for img in images:
+    results[img] = {}
+    originalImage = loadImage(img)
 
 
-        plt.figure(figsize=(18, 6))
-        plt.subplot(1, 3, 1)
-        plt.title(f"Original Image - {os.path.basename(img)}")
-        plt.imshow(originalImage, cmap='gray')
+    plt.figure(figsize=(18, 6))
+    plt.subplot(1, 3, 1)
+    plt.title(f"Original Image - {os.path.basename(img)}")
+    plt.imshow(originalImage, cmap='gray')
+    plt.axis('off')
+
+    for i, (qTable, qTableName) in enumerate(zip(qTables, qTableNames), start=2):
+        encoded, huff, imageShape, avgCodewordLength, compressionRatio = jpegCompress(img, qTable)
+        reconstructedImage = jpegDecompress(encoded, huff, imageShape, qTable)
+        psnrValue = psnr(originalImage, reconstructedImage)
+        results[img][qTableName] = {
+            "avgCodewordLength": avgCodewordLength,
+            "compressionRatio": compressionRatio,
+            "psnr": psnrValue
+        }
+        outputImagePath = f"./resultsThree/reconstructed_{os.path.splitext(os.path.basename(img))[0]}_{qTableName}.bmp"
+        saveImage(reconstructedImage, outputImagePath)
+
+        #decoded εικόνες
+        plt.subplot(1, 3, i)
+        plt.title(f"Decoded Image - {qTableName}")
+        plt.imshow(reconstructedImage, cmap='gray')
         plt.axis('off')
+    plt.savefig(f'./resultsThree/all{os.path.splitext(os.path.basename(img))[0]}.jpg')
+    plt.show()
 
-        for i, (qTable, qTableName) in enumerate(zip(qTables, qTableNames), start=2):
-            encoded, huff, imageShape, avgCodewordLength, compressionRatio = jpegCompress(img, qTable)
-            reconstructedImage = jpegDecompress(encoded, huff, imageShape, qTable)
-            psnrValue = psnr(originalImage, reconstructedImage)
-            results[img][qTableName] = {
-                "avgCodewordLength": avgCodewordLength,
-                "compressionRatio": compressionRatio,
-                "psnr": psnrValue
-            }
-            outputImagePath = f"./resultsThree/reconstructed_{os.path.splitext(os.path.basename(img))[0]}_{qTableName}.bmp"
-            saveImage(reconstructedImage, outputImagePath)
-
-            #decoded εικόνες
-            plt.subplot(1, 3, i)
-            plt.title(f"Decoded Image - {qTableName}")
-            plt.imshow(reconstructedImage, cmap='gray')
-            plt.axis('off')
-        plt.savefig(f'./resultsThree/all{os.path.splitext(os.path.basename(img))[0]}.jpg')
-        plt.show()
-
-    for img, res in results.items():
-        print(f"Results for {img}:")
-        for qTableName, metrics in res.items():
-            print(f"  {qTableName}:")
-            print(f"    Average codeword length: {metrics['avgCodewordLength']}")
-            print(f"    Compression ratio: {metrics['compressionRatio']}")
-            print(f"    PSNR: {metrics['psnr']}")
-
-if __name__ == "__main__":
-    main()
+for img, res in results.items():
+    print(f"Results for {img}:")
+    for qTableName, metrics in res.items():
+        print(f"  {qTableName}:")
+        print(f"    Average codeword length: {metrics['avgCodewordLength']}")
+        print(f"    Compression ratio: {metrics['compressionRatio']}")
+        print(f"    PSNR: {metrics['psnr']}")

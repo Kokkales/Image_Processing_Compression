@@ -14,6 +14,7 @@ N_POINTS = 8 * RADIUS
 
 villainsPath = './images/Villains'  # Προσαρμόστε το path αναλόγως
 
+# A. HISTOGRAMS
 # Normalization histogram
 def normalizeHistogram(hist):
     return hist / np.sum(hist)
@@ -32,6 +33,7 @@ def extractNormalizedLbpHistogram(imageGray):
     hist = normalizeHistogram(hist)
     return hist
 
+# B. METRICS
 # L1
 def computeLOneDistance(hist1, hist2):
     return np.sum(np.abs(hist1 - hist2))
@@ -50,7 +52,6 @@ def getAllImagePaths(base_path):
     return imagePaths
 imagePaths = getAllImagePaths(villainsPath)
 
-# Λίστες για αποθήκευση των χαρακτηριστικών
 brightnessHistograms = []
 lbpHistograms = []
 imageFiles = []
