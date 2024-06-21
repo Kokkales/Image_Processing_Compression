@@ -1,81 +1,253 @@
+import os
 import cv2
 import numpy as np
-import os
-from skimage.feature import local_binary_pattern
 import matplotlib.pyplot as plt
+from skimage.feature import local_binary_pattern
 import random
+import matplotlib.pyplot as plt
+import matplotlib.image as mpimg
+import re
 
-# Ορισμός των παραμέτρων για το LBP
-radius = 1
-n_points = 8 * radius
+# LBP orismata
+RADIUS = 1
+N_POINTS = 8 * RADIUS
 
-def load_images_from_folder(folder):
-    images = []
-    filenames = []
-    for filename in os.listdir(folder):
-        img = cv2.imread(os.path.join(folder, filename))
-        if img is not None:
-            images.append(img)
-            filenames.append(filename)
-    return images, filenames
+villainsPath = './images/Villains'  # Προσαρμόστε το path αναλόγως
 
-def convert_to_grayscale(image):
-    return cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+# Normalization histogram
+def normalizeHistogram(hist):
+    return hist / np.sum(hist)
 
-def calculate_normalized_histogram(image, bins=256):
-    histogram, bin_edges = np.histogram(image, bins=bins, range=(0, 256))
-    histogram = histogram.astype("float")
-    histogram /= (histogram.sum() + 1e-7)  # κανονικοποίηση
-    return histogram
+# extract histogam
+def extractNormalizedHistogram(imageGray):
+    hist = cv2.calcHist([imageGray], [0], None, [256], [0, 256])
+    hist = hist.flatten()
+    hist = normalizeHistogram(hist)
+    return hist
 
-def calculate_lbp_histogram(image, radius, n_points, bins=256):
-    lbp = local_binary_pattern(image, n_points, radius, method="uniform")
-    histogram, _ = np.histogram(lbp, bins=np.arange(0, bins + 1), range=(0, bins))
-    histogram = histogram.astype("float")
-    histogram /= (histogram.sum() + 1e-7)  # κανονικοποίηση
-    return histogram
+# extract LBP histogram
+def extractNormalizedLbpHistogram(imageGray):
+    lbp = local_binary_pattern(imageGray, N_POINTS, RADIUS, method='default')
+    (hist, _) = np.histogram(lbp.ravel(), bins=256, range=(0, 256))
+    hist = normalizeHistogram(hist)
+    return hist
 
-def extract_features(image):
-    gray_image = convert_to_grayscale(image)
-    brightness_histogram = calculate_normalized_histogram(gray_image)
-    lbp_histogram = calculate_lbp_histogram(gray_image, radius, n_points)
-    return np.concatenate((brightness_histogram, lbp_histogram))
+# L1
+def computeLOneDistance(hist1, hist2):
+    return np.sum(np.abs(hist1 - hist2))
 
-def metric_b1(f1, f2):
-    return np.sum(np.abs(f1 - f2))
+# L2
+def computeLTwoDistance(hist1, hist2):
+    return np.sqrt(np.sum((hist1 - hist2) ** 2))
 
-def metric_b2(f1, f2):
-    return np.sqrt(np.sum(np.square(f1 - f2)))
+# get all images
+def getAllImagePaths(base_path):
+    imagePaths = []
+    for root, _, files in os.walk(base_path):
+        for file in files:
+            if file.endswith('.jpg') or file.endswith('.png'):
+                imagePaths.append(os.path.join(root, file))
+    return imagePaths
+imagePaths = getAllImagePaths(villainsPath)
 
-# Step 1: Select 5 random images from different categories
-folder_path = './images/Villains/'
-category_folders = os.listdir(folder_path)
-random_images = []
-for category_folder in category_folders:
-    images_in_category_folder = os.listdir(os.path.join(folder_path, category_folder))
-    random_image = random.choice(images_in_category_folder)
-    random_images.append(cv2.imread(os.path.join(folder_path, category_folder, random_image)))
+# Λίστες για αποθήκευση των χαρακτηριστικών
+brightnessHistograms = []
+lbpHistograms = []
+imageFiles = []
 
-# Step 2-4: For each query image, compute similarity with all other images and rank them
-for query_image in random_images:
-    similarity_scores = []
-    query_features = extract_features(query_image)  # Extract features for the query image
+# process each image
+for imagePath in imagePaths:
+    image = cv2.imread(imagePath)
+    imageGray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
-    for category_folder in category_folders:
-        images_in_category_folder = os.listdir(os.path.join(folder_path, category_folder))
-        for image_name in images_in_category_folder:
-            image = cv2.imread(os.path.join(folder_path, category_folder, image_name))
-            if not np.array_equal(image, query_image):
-                image_features = extract_features(image)  # Extract features for the current image
-                # Calculate similarity using one of the metrics (B1 or B2)
-                similarity = metric_b1(query_features, image_features)
-                similarity_scores.append((image_name, similarity))
+    # featire extraction
+    brightness_hist = extractNormalizedHistogram(imageGray)
+    lbpHist = extractNormalizedLbpHistogram(imageGray)
 
-    # Rank images based on similarity scores
-    similarity_scores.sort(key=lambda x: x[1])
+    brightnessHistograms.append(brightness_hist)
+    lbpHistograms.append(lbpHist)
+    imageFiles.append(imagePath)
 
-    # Step 5: Print the top 5 retrieval results
-    print("Query Image:", query_image)
-    print("Top 5 Retrieval Results:")
-    for i, (retrieved_image_name, similarity) in enumerate(similarity_scores[:5], 1):
-        print(f"{i}. Image: {retrieved_image_name}, Similarity: {similarity}")
+# similarity calculation για όλους τους συνδυασμούς
+num_images = len(imageFiles)
+results = []
+
+for i in range(num_images):
+    for j in range(i + 1, num_images):
+        lOneBrightness = computeLOneDistance(brightnessHistograms[i], brightnessHistograms[j])
+        lTwoBrightness = computeLTwoDistance(brightnessHistograms[i], brightnessHistograms[j])
+        lOneLbp = computeLOneDistance(lbpHistograms[i], lbpHistograms[j])
+        lTwoLbp = computeLTwoDistance(lbpHistograms[i], lbpHistograms[j])
+
+        results.append({
+            'image1': imageFiles[i],
+            'image2': imageFiles[j],
+            'lOneBrightness': lOneBrightness,
+            'lTwoBrightness': lTwoBrightness,
+            'lOneLbp': lOneLbp,
+            'lTwoLbp': lTwoLbp
+        })
+
+for result in results:
+    print(f"Image 1: {result['image1']}")
+    print(f"Image 2: {result['image2']}")
+    print(f"L1 distance (brightness): {result['lOneBrightness']}")
+    print(f"L2 distance (brightness): {result['lTwoBrightness']}")
+    print(f"L1 distance (LBP): {result['lOneLbp']}")
+    print(f"L2 distance (LBP): {result['lTwoLbp']}")
+    print('-' * 50)
+
+# Γ. SIMILAR IMAGES
+def getTopKSimilarImages(queryHist, histograms, imageFiles, k, distanceMetric):
+    distances = []
+    for i, hist in enumerate(histograms):
+        if not np.array_equal(queryHist, hist):  # Εξαίρεση της ίδιας της εικόνας
+            distance = distanceMetric(queryHist, hist)
+            distances.append((distance, imageFiles[i]))
+    distances.sort(key=lambda x: x[0])
+    return distances[:k]
+
+def select_random_images(imageFiles, num_images):
+    selectedImages = []
+    categories = set()
+
+    while len(selectedImages) < num_images:
+        imageFile = random.choice(imageFiles)
+        category = os.path.basename(os.path.dirname(imageFile))
+        if category not in categories:
+            selectedImages.append(imageFile)
+            categories.add(category)
+
+    return selectedImages
+
+queryImages = select_random_images(imageFiles, 5)
+
+avgDistances = {
+    'brightness_L1': [],
+    'brightness_L2': [],
+    'lbp_L1': [],
+    'lbp_L2': []
+}
+
+def extract_category_name(file_path):
+    # Use regular expression to match the category name
+    # match = re.search(r'images[\\/](.*?)[\\/]', file_path)
+    match = re.search(r'Villains[\\/](.*?)[\\/]', file_path)
+    if match:
+        return match.group(1)
+    else:
+        return None
+# Υπολογισμός των top-5 πιο όμοιων εικόνων για κάθε query image
+k = 5
+
+def plot_similar_images(queryImagePath, similar_images, title):
+    """
+    Plots the query image alongside the top 5 similar images.
+
+    Parameters:
+    - queryImagePath: Path to the query image.
+    - similar_images: List of tuples (distance, imagePath) of similar images.
+    - title: Title for the plot.
+    """
+    fig, axes = plt.subplots(1, 6, figsize=(10, 3))
+    fig.suptitle(title, fontsize=16)
+
+    # Plot the query image
+    query_img = mpimg.imread(queryImagePath)
+    axes[0].imshow(query_img)
+    axes[0].set_title("Query Image")
+    axes[0].axis('off')
+
+    # Plot the similar images
+    for i, (distance, imagePath) in enumerate(similar_images):
+        similar_img = mpimg.imread(imagePath)
+        axes[i + 1].imshow(similar_img)
+        axes[i + 1].set_title(f"Dist: {distance:.2f}")
+        axes[i + 1].axis('off')
+    plt.savefig(f"./resultsFour/{extract_category_name(queryImagePath)}_{title}.jpg")
+    plt.show()
+
+def plotHistograms(lbp_histograms, brightness_histograms, queryImagePath):
+    # Παράδειγμα εμφάνισης αποτελεσμάτων για την πρώτη εικόνα
+    first_brightness_hist = brightness_histograms
+    first_lbp_hist = lbp_histograms
+
+    # Σχεδίαση των ιστογραμμάτων σε ένα διάγραμμα
+    fig, ax = plt.subplots(2, 1, figsize=(10, 8))
+
+    # Ιστόγραμμα φωτεινότητας
+    ax[0].bar(range(256), first_brightness_hist, color='gray')
+    ax[0].set_title('Normalized Brightness Histogram')
+    ax[0].set_xlim([0, 255])
+
+    # Ιστόγραμμα LBP
+    ax[1].bar(range(256), first_lbp_hist, color='gray')
+    ax[1].set_title('Normalized LBP Histogram')
+    ax[1].set_xlim([0, 255])
+
+    # Εμφάνιση του διαγράμματος
+    plt.tight_layout()
+    plt.savefig(f'./resultsFour/{extract_category_name(queryImagePath)}_histograms.jpg')
+    plt.show()
+
+
+for queryImagePath in queryImages:
+    queryImage = cv2.imread(queryImagePath)
+    queryImageGray = cv2.cvtColor(queryImage, cv2.COLOR_BGR2GRAY)
+
+    # extract features
+    queryBrightnessHist = extractNormalizedHistogram(queryImageGray)
+    queryLbpHist = extractNormalizedLbpHistogram(queryImageGray)
+    plotHistograms(queryLbpHist, queryBrightnessHist, queryImagePath)
+
+    # L1 brightness
+    top_5_brightness_l1 = getTopKSimilarImages(queryBrightnessHist, brightnessHistograms, imageFiles, k, computeLOneDistance)
+    avg_distance_brightness_l1 = np.mean([d[0] for d in top_5_brightness_l1])
+    avgDistances['brightness_L1'].append(avg_distance_brightness_l1)
+
+    # L2 brightness
+    top_5_brightness_l2 = getTopKSimilarImages(queryBrightnessHist, brightnessHistograms, imageFiles, k, computeLTwoDistance)
+    avg_distance_brightness_l2 = np.mean([d[0] for d in top_5_brightness_l2])
+    avgDistances['brightness_L2'].append(avg_distance_brightness_l2)
+
+    # L1 LPB
+    top_5_lbp_l1 = getTopKSimilarImages(queryLbpHist, lbpHistograms, imageFiles, k, computeLOneDistance)
+    avg_distance_lbp_l1 = np.mean([d[0] for d in top_5_lbp_l1])
+    avgDistances['lbp_L1'].append(avg_distance_lbp_l1)
+
+    # L2 LBP
+    top_5_lbp_l2 = getTopKSimilarImages(queryLbpHist, lbpHistograms, imageFiles, k, computeLTwoDistance)
+    avg_distance_lbp_l2 = np.mean([d[0] for d in top_5_lbp_l2])
+    avgDistances['lbp_L2'].append(avg_distance_lbp_l2)
+
+    print(f"Query Image: {queryImagePath}")
+    print("Top 5 similar images based on brightness histogram with L1 distance:")
+    for distance, imagePath in top_5_brightness_l1:
+        print(f"Image: {imagePath}, Distance: {distance}")
+
+    print("Top 5 similar images based on brightness histogram with L2 distance:")
+    for distance, imagePath in top_5_brightness_l2:
+        print(f"Image: {imagePath}, Distance: {distance}")
+
+    print("Top 5 similar images based on LBP histogram with L1 distance:")
+    for distance, imagePath in top_5_lbp_l1:
+        print(f"Image: {imagePath}, Distance: {distance}")
+
+    print("Top 5 similar images based on LBP histogram with L2 distance:")
+    for distance, imagePath in top_5_lbp_l2:
+        print(f"Image: {imagePath}, Distance: {distance}")
+
+    print('======================================================================')
+
+    plot_similar_images(queryImagePath, top_5_brightness_l1, "Top 5 similar images based on brightness histogram with L1 distance")
+    plot_similar_images(queryImagePath, top_5_brightness_l2, "Top 5 similar images based on brightness histogram with L2 distance")
+    plot_similar_images(queryImagePath, top_5_lbp_l1, "Top 5 similar images based on LBP histogram with L1 distance")
+    plot_similar_images(queryImagePath, top_5_lbp_l2, "Top 5 similar images based on LBP histogram with L2 distance")
+
+
+overallAvgDistances = {key: np.mean(value) for key, value in avgDistances.items()}
+print("Overall average distances for each combination:")
+for key, value in overallAvgDistances.items():
+    print(f"{key}: {value}")
+best_combination = min(overallAvgDistances, key=overallAvgDistances.get)
+print(f"The best combination of feature and metric is: {best_combination}")
